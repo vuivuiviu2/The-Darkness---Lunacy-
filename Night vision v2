@@ -1,0 +1,277 @@
+-- Các dịch vụ
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+
+-- Lưu ánh sáng gốc (để phục hồi khi tắt Night Vision)
+local original = {
+    Ambient = Lighting.Ambient,
+    Bottom = Lighting.ColorShift_Bottom,
+    Top = Lighting.ColorShift_Top
+}
+
+-- Hiệu ứng màu (ColorCorrection)
+local effect = Instance.new("ColorCorrectionEffect")
+effect.Name = "NightVisionEffect"
+effect.TintColor = Color3.fromRGB(255, 255, 255)
+effect.Brightness = 0.1
+effect.Saturation = 0.6
+effect.Contrast = 0.05
+effect.Enabled = false
+effect.Parent = Lighting
+
+-- Âm thanh
+local soundOn = Instance.new("Sound", workspace)
+soundOn.SoundId = "rbxassetid://9117027631"
+soundOn.Volume = 10
+
+local soundOff = Instance.new("Sound", workspace)
+soundOff.SoundId = "rbxassetid://116902184912832"
+soundOff.Volume = 10
+
+local soundRegen = Instance.new("Sound", workspace)
+soundRegen.SoundId = "rbxassetid://110057943333877"
+soundRegen.Volume = 10
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "NightVisionUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = CoreGui
+
+-- Overlay trắng mờ (hiệu ứng bật Night Vision)
+local whiteOverlay = Instance.new("Frame", gui)
+whiteOverlay.BackgroundColor3 = Color3.new(1, 1, 1)
+whiteOverlay.BackgroundTransparency = 1
+whiteOverlay.Size = UDim2.new(1, 0, 1, 0)
+whiteOverlay.ZIndex = 8
+
+-- Nút Night Vision
+local button = Instance.new("TextButton", gui)
+button.Size = UDim2.new(0, 80, 0, 80)
+button.Position = UDim2.new(1, -90, 0.55, 0)
+button.AnchorPoint = Vector2.new(0, 0.5)
+button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+button.BackgroundTransparency = 0.4
+button.BorderColor3 = Color3.fromRGB(255, 255, 255)
+button.BorderSizePixel = 1
+button.Text = ""
+button.ZIndex = 30
+Instance.new("UICorner", button).CornerRadius = UDim.new(1, 0)
+
+local icon = Instance.new("ImageLabel", button)
+icon.Image = "rbxassetid://84535540736203"
+icon.BackgroundTransparency = 1
+icon.Size = UDim2.new(1, -10, 1, -10)
+icon.Position = UDim2.new(0.5, 0, 0.5, 0)
+icon.AnchorPoint = Vector2.new(0.5, 0.5)
+icon.ZIndex = 31
+
+-- Thanh năng lượng (thể hiện thời gian còn lại)
+local barBack = Instance.new("Frame", gui)
+barBack.Size = UDim2.new(0, 150, 0, 12)
+barBack.Position = UDim2.new(1, -160, 1, -20)
+barBack.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+barBack.BorderColor3 = Color3.fromRGB(255, 255, 255)
+barBack.ZIndex = 30
+
+local energyBar = Instance.new("Frame", barBack)
+energyBar.Size = UDim2.new(1, 0, 1, 0)
+energyBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+energyBar.ZIndex = 31
+
+-- Vignette (viền ống nhòm) – hiển thị khi bật Night Vision
+local vignette = Instance.new("ImageLabel", gui)
+vignette.Size = UDim2.new(0, 400, 0, 400)
+vignette.Position = UDim2.new(0.5, 0, 0.5, 0)
+vignette.AnchorPoint = Vector2.new(0.5, 0.5)
+vignette.BackgroundTransparency = 1
+vignette.Image = "rbxassetid://87178127108797"
+vignette.ImageTransparency = 1
+vignette.ZIndex = 10
+
+-- Màn che 2 bên (tùy chọn)
+local leftCover = Instance.new("Frame", gui)
+leftCover.Size = UDim2.new(0.5, -200, 1, 0)
+leftCover.Position = UDim2.new(0, 0, 0, 0)
+leftCover.BackgroundColor3 = Color3.new(0, 0, 0)
+leftCover.ZIndex = 9
+leftCover.Visible = false
+
+local rightCover = Instance.new("Frame", gui)
+rightCover.Size = UDim2.new(0.5, -200, 1, 0)
+rightCover.Position = UDim2.new(0.5, 200, 0, 0)
+rightCover.BackgroundColor3 = Color3.new(0, 0, 0)
+rightCover.ZIndex = 9
+rightCover.Visible = false
+
+-- Đèn chiếu (SpotLight) gắn vào camera
+local camAttach = Instance.new("Attachment", camera)
+local spotLight = Instance.new("SpotLight", camAttach)
+spotLight.Color = Color3.fromRGB(255, 255, 255)
+spotLight.Brightness = 2
+spotLight.Angle = 70
+spotLight.Range = 60
+spotLight.Enabled = false
+
+-- Đèn PointLight gắn vào nhân vật
+local function createPointLight()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    local light = hrp:FindFirstChild("NightVisionPointLight")
+    if not light then
+        light = Instance.new("PointLight")
+        light.Name = "NightVisionPointLight"
+        light.Color = Color3.fromRGB(255, 255, 255)
+        light.Brightness = 10
+        light.Range = 20
+        light.Enabled = false
+        light.Parent = hrp
+    end
+    return light
+end
+
+local pointLight = createPointLight()
+player.CharacterAdded:Connect(function()
+    pointLight = createPointLight()
+end)
+
+-- Highlight chìa khóa (sử dụng Highlight object)
+local function highlightKey(enabled)
+    local room = Workspace.CurrentRooms:FindFirstChild(ReplicatedStorage.GameData.LatestRoom.Value)
+    if not room then return end
+    local key = room:FindFirstChild("KeyObtain", true)
+    if not key then return end
+
+    local existing = key:FindFirstChild("NightVisionKeyHighlight")
+    if enabled then
+        if not existing then
+            local hl = Instance.new("Highlight")
+            hl.Name = "NightVisionKeyHighlight"
+            hl.FillColor = Color3.fromRGB(255, 255, 255)
+            hl.OutlineColor = Color3.new(1, 1, 1)
+            hl.FillTransparency = 0.3
+            hl.OutlineTransparency = 0
+            hl.Adornee = key
+            hl.Parent = key
+        end
+    elseif existing then
+        existing:Destroy()
+    end
+end
+
+-- Trạng thái Night Vision
+local maxTime = 20
+local timeLeft = maxTime
+local isOn = false
+
+-- Hàm bật Night Vision
+local function enableNightVision()
+    soundOn:Play()
+
+    TweenService:Create(Lighting, TweenInfo.new(0.5), {
+        Ambient = Color3.new(1, 1, 1),
+        ColorShift_Bottom = Color3.new(1, 1, 1),
+        ColorShift_Top = Color3.new(1, 1, 1)
+    }):Play()
+
+    effect.Enabled = true
+    effect.Contrast = 0
+    TweenService:Create(effect, TweenInfo.new(0.5), { Contrast = 0.05 }):Play()
+
+    vignette.ImageTransparency = 0
+    whiteOverlay.BackgroundTransparency = 1
+    TweenService:Create(whiteOverlay, TweenInfo.new(0.5), { BackgroundTransparency = 0.7 }):Play()
+
+    task.delay(0.1, function()
+        spotLight.Enabled = true
+        if pointLight then pointLight.Enabled = true end
+    end)
+
+    leftCover.Visible = true
+    rightCover.Visible = true
+    highlightKey(true)
+
+    TweenService:Create(button, TweenInfo.new(0.25), {
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    }):Play()
+end
+
+-- Hàm tắt Night Vision
+local function disableNightVision()
+    soundOff:Play()
+    Lighting.Ambient = original.Ambient
+    Lighting.ColorShift_Bottom = original.Bottom
+    Lighting.ColorShift_Top = original.Top
+    effect.Enabled = false
+    spotLight.Enabled = false
+    if pointLight then pointLight.Enabled = false end
+
+    vignette.ImageTransparency = 1
+    TweenService:Create(whiteOverlay, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
+    
+    leftCover.Visible = false
+    rightCover.Visible = false
+    highlightKey(false)
+    button.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+end
+
+-- Khi bấm nút Night Vision
+button.MouseButton1Click:Connect(function()
+    if isOn then
+        isOn = false
+        disableNightVision()
+    elseif timeLeft > 0 then
+        isOn = true
+        enableNightVision()
+    end
+end)
+
+-- Giảm thời gian (năng lượng) khi Night Vision bật
+RunService.RenderStepped:Connect(function(dt)
+    if isOn then
+        timeLeft = timeLeft - dt
+        if timeLeft <= 0 then
+            timeLeft = 0
+            isOn = false
+            disableNightVision()
+        end
+    end
+    energyBar.Size = UDim2.new(math.clamp(timeLeft / maxTime, 0, 1), 0, 1, 0)
+end)
+
+-- Duy trì hiệu ứng fullbright khi Night Vision bật
+RunService.RenderStepped:Connect(function()
+    if isOn then
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.ColorShift_Bottom = Color3.new(1, 1, 1)
+        Lighting.ColorShift_Top = Color3.new(1, 1, 1)
+    end
+end)
+
+-- Kiểm tra liên tục phòng thay đổi để cộng +2 giây (không phụ thuộc việc Night Vision có bật hay không)
+local GameData = ReplicatedStorage:WaitForChild("GameData")
+local LatestRoom = GameData:WaitForChild("LatestRoom")
+local lastRoom = LatestRoom.Value
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        local currentRoom = LatestRoom.Value
+        if currentRoom ~= lastRoom then
+            lastRoom = currentRoom
+            if timeLeft < maxTime then
+                timeLeft = math.min(maxTime, timeLeft + 2)
+                soundRegen:Play()
+            end
+        end
+    end
+end)
