@@ -23,7 +23,7 @@ coroutine.wrap(function()
 		light.Name = "PlayerLight"
 		light.Color = Color3.new(1, 1, 1)
 		light.Brightness = 1
-		light.Range = 7
+		light.Range = 1
 		light.Shadows = true
 		light.Parent = part
 	end
