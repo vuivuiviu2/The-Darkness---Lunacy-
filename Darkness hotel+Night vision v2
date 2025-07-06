@@ -1,0 +1,70 @@
+local Lighting = game:GetService("Lighting")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CurrentRooms = workspace:WaitForChild("CurrentRooms")
+local player = Players.LocalPlayer or Players:GetPlayers()[1]
+
+-- Camera đen trắng
+local bw = Instance.new("ColorCorrectionEffect")
+bw.Name = "BlackAndWhite"
+bw.Saturation = -1
+bw.Contrast = 0.1
+bw.Brightness = 0
+bw.Parent = Lighting
+
+-- Gắn PointLight trắng lên người chơi
+coroutine.wrap(function()
+	if not player.Character then player.CharacterAdded:Wait() end
+	local character = player.Character or player.CharacterAdded:Wait()
+	repeat task.wait() until character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+	local part = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+	if part and not part:FindFirstChild("PlayerLight") then
+		local light = Instance.new("PointLight")
+		light.Name = "PlayerLight"
+		light.Color = Color3.new(1, 1, 1)
+		light.Brightness = 4
+		light.Range = 7
+		light.Shadows = true
+		light.Parent = part
+	end
+end)()
+
+-- Hàm xóa đèn lồng và đèn treo tường trong mọi phòng
+local function destroyLights()
+	for _, room in ipairs(CurrentRooms:GetChildren()) do
+		if room:FindFirstChild("Assets") then
+			local chandelier = room.Assets:FindFirstChild("Chandelier")
+			if chandelier then
+				pcall(function()
+					chandelier:Destroy()
+				end)
+			end
+			local fixtures = room.Assets:FindFirstChild("Light_Fixtures")
+			if fixtures then
+				pcall(function()
+					fixtures:Destroy()
+				end)
+			end
+		end
+	end
+end
+
+-- Xóa liên tục
+coroutine.wrap(function()
+	while true do
+		task.wait(0.2)
+		destroyLights()
+	end
+end)()
+
+-- Xoá lại mỗi khi vào phòng mới
+coroutine.wrap(function()
+	while true do
+		ReplicatedStorage.GameData.LatestRoom.Changed:Wait()
+		task.wait(0.1)
+		destroyLights()
+	end
+end)()
+
+-- ✅ Kích hoạt Night Vision v2
+loadstring(game:HttpGet("https://raw.githubusercontent.com/vuivuiviu2/The-Darkness---Lunacy-/main/Night%20vision%20v2"))()
